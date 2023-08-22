@@ -2,32 +2,34 @@
 
 #include <Arduino.h>
 
-extern int defaultLanguage;
+constexpr const int defaultLanguage = 0;
 
-extern String languageList[];
+extern const String languageList[];
 
 /*EN English language section*/
-extern String languageEnDaysShort[];
-extern String languageEnDays[];
-extern String languageEnMonth[];
+extern const String languageEnDaysShort[];
+extern const String languageEnDays[];
+extern const String languageEnMonth[];
 /*END English language section END*/
 
 /*NL Dutch language section*/
-extern String languageNlDaysShort[];
-extern String languageNlDays[];
-extern String languageNlMonth[];
+extern const String languageNlDaysShort[];
+extern const String languageNlDays[];
+extern const String languageNlMonth[];
 /*END Dutch language section END*/
 
 /*DE German language section*/
-extern String languageDeDaysShort[];
-extern String languageDeDays[];
-extern String languageDeMonth[];
+extern const String languageDeDaysShort[];
+extern const String languageDeDays[];
+extern const String languageDeMonth[];
 /*END German language section END*/
 
-extern String* languageDaysShort[];
-extern String* languageDays[];
-extern String* languageMonth[];
+extern const String* languageDaysShort[];
+extern const String* languageDays[];
+extern const String* languageMonth[];
 
 extern void updateLanguageFromConfig();
-extern int getDefaultLanguage();
-extern int getCurrentLanguage();
+constexpr const int getDefaultLanguage() {
+    return defaultLanguage;
+}
+extern const int getCurrentLanguage();

@@ -26,10 +26,14 @@
 #ifdef CONTENT_QR
 #include "qrcode.h"
 #endif
+#include "content/content.h"
+#include "content/image.h"
+#include "content/jsontemplate.h"
+#include "content/number.h"
+#include "content/weather.h"
 #include "language.h"
 #include "settings.h"
 #include "tag_db.h"
-#include "truetype.h"
 #include "util.h"
 #include "web.h"
 
@@ -128,7 +132,7 @@ void drawCounter(const uint8_t mac[8], const bool buttonPressed, tagRecord *&tag
     }
     drawNumber(filename, counter, (int32_t)cfgobj["thresholdred"], taginfo, imageParams);
     taginfo->nextupdate = nextupdate;
-    updateTagImage(filename, mac, (buttonPressed ? 0 : nextCheckin), taginfo, imageParams);
+    Content::updateTagImage(filename, mac, (buttonPressed ? 0 : nextCheckin), taginfo, imageParams);
     cfgobj["counter"] = counter + 1;
 }
 
@@ -186,7 +190,9 @@ void drawNew(const uint8_t mac[8], const bool buttonPressed, tagRecord *&taginfo
     imageParams.hasRed = false;
     imageParams.dataType = DATATYPE_IMG_RAW_1BPP;
     imageParams.dither = false;
-    if (taginfo->hasCustomLUT && taginfo->lut != 1) imageParams.grayLut = true;
+    if (taginfo->hasCustomLUT && taginfo->lut != 1) {
+        imageParams.grayLut = true;
+    }
 
     imageParams.invert = false;
     imageParams.symbols = 0;
@@ -194,45 +200,11 @@ void drawNew(const uint8_t mac[8], const bool buttonPressed, tagRecord *&taginfo
 
     switch (taginfo->contentMode) {
         case 0:  // Image
-        {
-            String configFilename = cfgobj["filename"].as<String>();
-            if (!util::isEmptyOrNull(configFilename)) {
-                if (!configFilename.startsWith("/")) {
-                    configFilename = "/" + configFilename;
-                }
-                if (contentFS->exists(configFilename)) {
-                    imageParams.dither = cfgobj["dither"] && cfgobj["dither"] == "1";
-                    jpg2buffer(configFilename, filename, imageParams);
-                } else {
-                    filename = "/current/" + String(hexmac) + ".raw";
-                    if (contentFS->exists(filename)) {
-                        prepareDataAvail(filename, imageParams.dataType, mac, cfgobj["timetolive"].as<int>(), true);
-                        wsLog("File " + configFilename + " not found, resending image " + filename);
-                    } else {
-                        wsErr("File " + configFilename + " not found");
-                    }
-                    taginfo->nextupdate = 3216153600;
-                    break;
-                }
-                if (imageParams.hasRed) {
-                    imageParams.dataType = DATATYPE_IMG_RAW_2BPP;
-                }
-                if (prepareDataAvail(filename, imageParams.dataType, mac, cfgobj["timetolive"].as<int>())) {
-                    if (cfgobj["delete"].as<String>() == "1") {
-                        contentFS->remove("/" + configFilename);
-                    }
-                } else {
-                    wsErr("Error accessing " + filename);
-                }
-            }
-            taginfo->nextupdate = 3216153600;
-        } break;
+            image::draw(now, filename, cfgobj, taginfo, mac, hexmac, imageParams);
+            break;
 
         case 1:  // Today
-
-            drawDate(filename, taginfo, imageParams);
-            taginfo->nextupdate = midnight;
-            updateTagImage(filename, mac, (midnight - now) / 60 - 10, taginfo, imageParams);
+            date::draw(now, midnight, filename, cfgobj, taginfo, mac, hexmac, imageParams);
             break;
 
         case 2:  // CountDays
@@ -244,22 +216,11 @@ void drawNew(const uint8_t mac[8], const bool buttonPressed, tagRecord *&taginfo
             break;
 
         case 4:  // Weather
-
-            // https://open-meteo.com/
-            // https://geocoding-api.open-meteo.com/v1/search?name=eindhoven
-            // https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&current_weather=true
-            // https://github.com/erikflowers/weather-icons
-
-            drawWeather(filename, cfgobj, taginfo, imageParams);
-            taginfo->nextupdate = now + 1800;
-            updateTagImage(filename, mac, 15, taginfo, imageParams);
+            weather::draw(now, filename, cfgobj, taginfo, mac, hexmac, imageParams);
             break;
 
         case 8:  // Forecast
-
-            drawForecast(filename, cfgobj, taginfo, imageParams);
-            taginfo->nextupdate = now + 3600;
-            updateTagImage(filename, mac, 15, taginfo, imageParams);
+            weather::forecast::draw(now, filename, cfgobj, taginfo, mac, hexmac, imageParams);
             break;
 
         case 5:  // Firmware
@@ -286,7 +247,7 @@ void drawNew(const uint8_t mac[8], const bool buttonPressed, tagRecord *&taginfo
             const int interval = cfgobj["interval"].as<int>();
             if (httpcode == 200) {
                 taginfo->nextupdate = now + 60 * (interval < 3 ? 15 : interval);
-                updateTagImage(filename, mac, interval, taginfo, imageParams);
+                Content::updateTagImage(filename, mac, interval, taginfo, imageParams);
                 cfgobj["#fetched"] = now;
             } else if (httpcode == 304) {
                 taginfo->nextupdate = now + 60 * (interval < 3 ? 15 : interval);
@@ -301,7 +262,7 @@ void drawNew(const uint8_t mac[8], const bool buttonPressed, tagRecord *&taginfo
             if (getRssFeed(filename, cfgobj["url"], cfgobj["title"], taginfo, imageParams)) {
                 const int interval = cfgobj["interval"].as<int>();
                 taginfo->nextupdate = now + 60 * (interval < 3 ? 60 : interval);
-                updateTagImage(filename, mac, interval, taginfo, imageParams);
+                Content::updateTagImage(filename, mac, interval, taginfo, imageParams);
             } else {
                 taginfo->nextupdate = now + 300;
             }
@@ -311,7 +272,7 @@ void drawNew(const uint8_t mac[8], const bool buttonPressed, tagRecord *&taginfo
 
             drawQR(filename, cfgobj["qr-content"], cfgobj["title"], taginfo, imageParams);
             taginfo->nextupdate = now + 12 * 3600;
-            updateTagImage(filename, mac, 0, taginfo, imageParams);
+            Content::updateTagImage(filename, mac, 0, taginfo, imageParams);
             break;
 
         case 11:  // Calendar:
@@ -319,45 +280,36 @@ void drawNew(const uint8_t mac[8], const bool buttonPressed, tagRecord *&taginfo
             if (getCalFeed(filename, cfgobj["apps_script_url"], cfgobj["title"], taginfo, imageParams)) {
                 const int interval = cfgobj["interval"].as<int>();
                 taginfo->nextupdate = now + 60 * (interval < 3 ? 15 : interval);
-                updateTagImage(filename, mac, interval, taginfo, imageParams);
+                Content::updateTagImage(filename, mac, interval, taginfo, imageParams);
             } else {
                 taginfo->nextupdate = now + 300;
             }
             break;
 
         case 12:  // RemoteAP
-
             taginfo->nextupdate = 3216153600;
             break;
 
         case 13:  // SegStatic
-
             sprintf(buffer, "%-4.4s%-2.2s%-4.4s", cfgobj["line1"].as<const char *>(), cfgobj["line2"].as<const char *>(), cfgobj["line3"].as<const char *>());
             taginfo->nextupdate = 3216153600;
             sendAPSegmentedData(mac, (String)buffer, 0x0000, false, (taginfo->isExternal == false));
             break;
 
         case 14:  // NFC URL
-
             taginfo->nextupdate = 3216153600;
             prepareNFCReq(mac, cfgobj["url"].as<const char *>());
             break;
 
         case 15:  // send gray LUT
-
             taginfo->nextupdate = 3216153600;
             prepareLUTreq(mac, cfgobj["bytes"]);
             taginfo->hasCustomLUT = true;
             break;
 
         case 16:  // buienradar
-
-        {
-            const uint8_t refresh = drawBuienradar(filename, cfgobj, taginfo, imageParams);
-            taginfo->nextupdate = now + refresh * 60;
-            updateTagImage(filename, mac, refresh, taginfo, imageParams);
+            buienradar::draw(now, filename, cfgobj, taginfo, mac, hexmac, imageParams);
             break;
-        }
 
         case 17:  // tag command
             sendTagCommand(mac, cfgobj["cmd"].as<int>(), (taginfo->isExternal == false));
@@ -374,212 +326,20 @@ void drawNew(const uint8_t mac[8], const bool buttonPressed, tagRecord *&taginfo
             break;
 
         case 19:  // json template
-        {
-            const String configFilename = cfgobj["filename"].as<String>();
-            if (!util::isEmptyOrNull(configFilename)) {
-                String configUrl = cfgobj["url"].as<String>();
-                if (!util::isEmptyOrNull(configUrl)) {
-                    StaticJsonDocument<1000> json;
-                    Serial.println("Get json url + file");
-                    if (util::httpGetJson(configUrl, json, 1000)) {
-                        if (getJsonTemplateFileExtractVariables(filename, configFilename, json, taginfo, imageParams)) {
-                            updateTagImage(filename, mac, cfgobj["interval"].as<int>(), taginfo, imageParams);
-                        } else {
-                            wsErr("error opening file " + configFilename);
-                        }
-                        const int interval = cfgobj["interval"].as<int>();
-                        taginfo->nextupdate = now + 60 * (interval < 3 ? 15 : interval);
-                    } else {
-                        taginfo->nextupdate = now + 600;
-                    }
-
-                } else {
-                    const bool result = getJsonTemplateFile(filename, configFilename, taginfo, imageParams);
-                    if (result) {
-                        updateTagImage(filename, mac, cfgobj["interval"].as<int>(), taginfo, imageParams);
-                    } else {
-                        wsErr("error opening file " + configFilename);
-                    }
-                    taginfo->nextupdate = 3216153600;
-                }
-            } else {
-                const int httpcode = getJsonTemplateUrl(filename, cfgobj["url"], (time_t)cfgobj["#fetched"], String(hexmac), taginfo, imageParams);
-                const int interval = cfgobj["interval"].as<int>();
-                if (httpcode == 200) {
-                    taginfo->nextupdate = now + 60 * (interval < 3 ? 15 : interval);
-                    updateTagImage(filename, mac, interval, taginfo, imageParams);
-                    cfgobj["#fetched"] = now;
-                } else if (httpcode == 304) {
-                    taginfo->nextupdate = now + 60 * (interval < 3 ? 15 : interval);
-                } else {
-                    taginfo->nextupdate = now + 600;
-                }
-            }
+            JsonTemplate::draw(now, filename, cfgobj, taginfo, mac, hexmac, imageParams);
             break;
-        }
 
         case 20:  // display a copy
             break;
 
         case 21:  // ap info
             drawAPinfo(filename, cfgobj, taginfo, imageParams);
-            updateTagImage(filename, mac, 0, taginfo, imageParams);
+            Content::updateTagImage(filename, mac, 0, taginfo, imageParams);
             taginfo->nextupdate = 3216153600;
             break;
     }
 
     taginfo->modeConfigJson = doc.as<String>();
-}
-
-bool updateTagImage(String &filename, const uint8_t *dst, uint16_t nextCheckin, tagRecord *&taginfo, imgParam &imageParams) {
-    if (taginfo->hwType == SOLUM_SEG_UK) {
-        sendAPSegmentedData(dst, (String)imageParams.segments, imageParams.symbols, imageParams.invert, (taginfo->isExternal == false));
-    } else {
-        if (imageParams.hasRed) imageParams.dataType = DATATYPE_IMG_RAW_2BPP;
-        prepareDataAvail(filename, imageParams.dataType, dst, nextCheckin);
-    }
-    return true;
-}
-
-uint8_t processFontPath(String &font) {
-    if (font == "") return 3;
-    if (font == "glasstown_nbp_tf") return 1;
-    if (font == "7x14_tf") return 1;
-    if (font == "t0_14b_tf") return 1;
-    if (font.indexOf('/') == -1) font = "/fonts/" + font;
-    if (!font.startsWith("/")) font = "/" + font;
-    if (font.endsWith(".vlw")) font = font.substring(0, font.length() - 4);
-    if (font.endsWith(".ttf")) return 2;
-    return 3;
-}
-
-void replaceVariables(String &format) {
-    size_t startIndex = 0;
-    size_t openBraceIndex, closeBraceIndex;
-
-    while ((openBraceIndex = format.indexOf('{', startIndex)) != -1 &&
-           (closeBraceIndex = format.indexOf('}', openBraceIndex + 1)) != -1) {
-        const std::string variableName = format.substring(openBraceIndex + 1, closeBraceIndex).c_str();
-        const std::string varKey = "{" + variableName + "}";
-        auto var = varDB.find(variableName);
-        if (var != varDB.end()) {
-            format.replace(varKey.c_str(), var->second.value);
-        }
-        startIndex = closeBraceIndex + 1;
-    }
-}
-
-void drawString(TFT_eSprite &spr, String content, int16_t posx, int16_t posy, String font, byte align, uint16_t color, uint16_t size, uint16_t bgcolor) {
-    // drawString(spr,"test",100,10,"bahnschrift30",TC_DATUM,TFT_RED);
-    replaceVariables(content);
-    switch (processFontPath(font)) {
-        case 1: {
-            // u8g2 font
-            U8g2_for_TFT_eSPI u8f;
-            u8f.begin(spr);
-            setU8G2Font(font, u8f);
-            u8f.setForegroundColor(color);
-            u8f.setBackgroundColor(bgcolor);
-            if (align == TC_DATUM) {
-                posx -= u8f.getUTF8Width(content.c_str()) / 2;
-            }
-            if (align == TR_DATUM) {
-                posx -= u8f.getUTF8Width(content.c_str());
-            }
-            u8f.setCursor(posx, posy);
-            u8f.print(content);
-        } break;
-        case 2: {
-            // truetype
-            time_t t = millis();
-            truetypeClass truetype = truetypeClass();
-            void *framebuffer = spr.getPointer();
-            truetype.setFramebuffer(spr.width(), spr.height(), spr.getColorDepth(), static_cast<uint8_t *>(framebuffer));
-            File fontFile = contentFS->open(font, "r");
-            if (!truetype.setTtfFile(fontFile)) {
-                Serial.println("read ttf failed");
-                return;
-            }
-
-            truetype.setCharacterSize(size);
-            truetype.setCharacterSpacing(0);
-            if (align == TC_DATUM) {
-                posx -= truetype.getStringWidth(content) / 2;
-            }
-            if (align == TR_DATUM) {
-                posx -= truetype.getStringWidth(content);
-            }
-            truetype.setTextBoundary(posx, spr.width(), spr.height());
-            truetype.setTextColor(spr.color16to8(color), spr.color16to8(color));
-            truetype.textDraw(posx, posy, content);
-            truetype.end();
-            // Serial.println("text: '" + content + "' " + String(millis() - t) + "ms");
-        } break;
-        case 3: {
-            // vlw bitmap font
-            spr.setTextDatum(align);
-            if (font != "") spr.loadFont(font.substring(1), *contentFS);
-            spr.setTextColor(color, bgcolor);
-            spr.drawString(content, posx, posy);
-            if (font != "") spr.unloadFont();
-        }
-    }
-}
-
-void initSprite(TFT_eSprite &spr, int w, int h, imgParam &imageParams) {
-    spr.setColorDepth(8);
-    spr.createSprite(w, h);
-    spr.setRotation(3);
-    if (spr.getPointer() == nullptr) {
-        wsErr("low on memory. Fallback to 1bpp");
-        util::printLargestFreeBlock();
-        spr.setColorDepth(1);
-        spr.setBitmapColor(TFT_WHITE, TFT_BLACK);
-        imageParams.bufferbpp = 1;
-        spr.createSprite(w, h);
-    }
-    if (spr.getPointer() == nullptr) {
-        wsErr("Failed to create sprite");
-    }
-    spr.fillSprite(TFT_WHITE);
-}
-
-void drawDate(String &filename, tagRecord *&taginfo, imgParam &imageParams) {
-    time_t now;
-    time(&now);
-    struct tm timeinfo;
-    localtime_r(&now, &timeinfo);
-
-    const int month_number = timeinfo.tm_mon;
-    const int year_number = timeinfo.tm_year + 1900;
-
-    if (taginfo->hwType == SOLUM_SEG_UK) {
-        sprintf(imageParams.segments, "%2d%2d%-2.2s%04d", timeinfo.tm_mday, month_number + 1, languageDays[getCurrentLanguage()][timeinfo.tm_wday], year_number);
-        imageParams.symbols = 0x04;
-        return;
-    }
-
-    StaticJsonDocument<512> loc;
-    getTemplate(loc, 1, taginfo->hwType);
-
-    TFT_eSprite spr = TFT_eSprite(&tft);
-    initSprite(spr, imageParams.width, imageParams.height, imageParams);
-
-    const auto &date = loc["date"];
-    const auto &weekday = loc["weekday"];
-    if (date) {
-        drawString(spr, languageDays[getCurrentLanguage()][timeinfo.tm_wday], weekday[0], weekday[1], weekday[2], TC_DATUM, TFT_RED);
-        drawString(spr, String(timeinfo.tm_mday) + " " + languageMonth[getCurrentLanguage()][timeinfo.tm_mon], date[0], date[1], date[2], TC_DATUM);
-    } else {
-        const auto &month = loc["month"];
-        const auto &day = loc["day"];
-        drawString(spr, languageDays[getCurrentLanguage()][timeinfo.tm_wday], weekday[0], weekday[1], weekday[2], TC_DATUM, TFT_BLACK);
-        drawString(spr, String(languageMonth[getCurrentLanguage()][timeinfo.tm_mon]), month[0], month[1], month[2], TC_DATUM);
-        drawString(spr, String(timeinfo.tm_mday), day[0], day[1], day[2], TC_DATUM, TFT_RED);
-    }
-
-    spr2buffer(spr, filename, imageParams);
-    spr.deleteSprite();
 }
 
 void drawNumber(String &filename, int32_t count, int32_t thresholdred, tagRecord *&taginfo, imgParam &imageParams) {
@@ -607,9 +367,9 @@ void drawNumber(String &filename, int32_t count, int32_t thresholdred, tagRecord
     TFT_eSprite spr = TFT_eSprite(&tft);
 
     StaticJsonDocument<512> loc;
-    getTemplate(loc, 2, taginfo->hwType);
+    Content::getTemplate(loc, 2, taginfo->hwType);
 
-    initSprite(spr, imageParams.width, imageParams.height, imageParams);
+    Content::initSprite(spr, imageParams.width, imageParams.height, imageParams);
     spr.setTextDatum(MC_DATUM);
     if (countTemp > thresholdred) {
         spr.setTextColor(TFT_RED, TFT_WHITE);
@@ -623,191 +383,6 @@ void drawNumber(String &filename, int32_t count, int32_t thresholdred, tagRecord
     spr.loadFont(font, *contentFS);
     spr.drawString(String(count), loc["xy"][0].as<uint16_t>(), loc["xy"][1].as<uint16_t>());
     spr.unloadFont();
-
-    spr2buffer(spr, filename, imageParams);
-    spr.deleteSprite();
-}
-
-/// @brief Get a weather icon
-/// @param id Icon identifier/index
-/// @param isNight Use night icons (true) or not (false)
-/// @return String reference to icon
-const String getWeatherIcon(const uint8_t id, const bool isNight = false) {
-    const String weatherIcons[] = {"\uf00d", "\uf00c", "\uf002", "\uf013", "\uf013", "\uf014", "", "", "\uf014", "", "",
-                                   "\uf01a", "", "\uf01a", "", "\uf01a", "\uf017", "\uf017", "", "", "",
-                                   "\uf019", "", "\uf019", "", "\uf019", "\uf015", "\uf015", "", "", "",
-                                   "\uf01b", "", "\uf01b", "", "\uf01b", "", "\uf076", "", "", "\uf01a",
-                                   "\uf01a", "\uf01a", "", "", "\uf064", "\uf064", "", "", "", "",
-                                   "", "", "", "", "\uf01e", "\uf01d", "", "", "\uf01e"};
-    if (isNight && id <= 3) {
-        const String nightIcons[] = {"\uf02e", "\uf083", "\uf086"};
-        return nightIcons[id];
-    }
-    return weatherIcons[id];
-}
-
-void drawWeather(String &filename, JsonObject &cfgobj, const tagRecord *taginfo, imgParam &imageParams) {
-    wsLog("get weather");
-
-    getLocation(cfgobj);
-
-    const String lat = cfgobj["#lat"];
-    const String lon = cfgobj["#lon"];
-    const String tz = cfgobj["#tz"];
-    String units = "";
-    if (cfgobj["units"] == "1") {
-        units += "&temperature_unit=fahrenheit&windspeed_unit=mph";
-    }
-
-    StaticJsonDocument<1000> doc;
-    const bool success = util::httpGetJson("https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon + "&current_weather=true&windspeed_unit=ms&timezone=" + tz + units, doc, 5000);
-    if (!success) {
-        return;
-    }
-
-    const auto &currentWeather = doc["current_weather"];
-    const double temperature = currentWeather["temperature"].as<double>();
-    float windspeed = currentWeather["windspeed"].as<float>();
-    int windval = 0;
-    const int winddirection = currentWeather["winddirection"].as<int>();
-    const bool isNight = currentWeather["is_day"].as<int>() == 0;
-    uint8_t weathercode = currentWeather["weathercode"].as<int>();
-    if (weathercode > 40) weathercode -= 40;
-
-    const uint8_t beaufort = windSpeedToBeaufort(windspeed);
-    if (cfgobj["units"] != "1") {
-        windval = beaufort;
-    } else {
-        windval = int(windspeed);
-    }
-
-    doc.clear();
-
-    if (taginfo->hwType == SOLUM_SEG_UK) {
-        const String weatherText[] = {"sun", "sun", "sun", "CLDY", "CLDY", "FOG", "", "", "FOG", "", "",
-                                      "DRZL", "", "DRZL", "", "DRZL", "ice", "ice", "", "", "",
-                                      "rain", "", "rain", "", "rain", "ice", "ice", "", "", "",
-                                      "SNOW", "", "SNOW", "", "SNOW", "", "SNOW", "", "", "rain",
-                                      "rain", "rain", "", "", "SNOW", "SNOW", "", "", "", "",
-                                      "", "", "", "", "STRM", "HAIL", "", "", "HAIL"};
-        if (temperature < -9.9) {
-            sprintf(imageParams.segments, "%3d^%2d%-4.4s", static_cast<int>(temperature), windval, weatherText[weathercode].c_str());
-            imageParams.symbols = 0x00;
-        } else {
-            sprintf(imageParams.segments, "%3d^%2d%-4.4s", static_cast<int>(temperature * 10), windval, weatherText[weathercode].c_str());
-            imageParams.symbols = 0x04;
-        }
-        return;
-    }
-
-    getTemplate(doc, 4, taginfo->hwType);
-
-    TFT_eSprite spr = TFT_eSprite(&tft);
-    tft.setTextWrap(false, false);
-
-    initSprite(spr, imageParams.width, imageParams.height, imageParams);
-    const auto &location = doc["location"];
-    drawString(spr, cfgobj["location"], location[0], location[1], location[2]);
-    const auto &wind = doc["wind"];
-    drawString(spr, String(windval), wind[0], wind[1], wind[2], TR_DATUM, (beaufort > 4 ? TFT_RED : TFT_BLACK));
-
-    char tmpOutput[5];
-    dtostrf(temperature, 2, 1, tmpOutput);
-    const auto &temp = doc["temp"];
-    drawString(spr, String(tmpOutput), temp[0], temp[1], temp[2], TL_DATUM, (temperature < 0 ? TFT_RED : TFT_BLACK));
-
-    const int iconcolor = (weathercode == 55 || weathercode == 65 || weathercode == 75 || weathercode == 82 || weathercode == 86 || weathercode == 95 || weathercode == 96 || weathercode == 99)
-                              ? TFT_RED
-                              : TFT_BLACK;
-    const auto &icon = doc["icon"];
-    drawString(spr, getWeatherIcon(weathercode, isNight), icon[0], icon[1], "/fonts/weathericons.ttf", icon[3], iconcolor, icon[2]);
-    const auto &dir = doc["dir"];
-    drawString(spr, windDirectionIcon(winddirection), dir[0], dir[1], "/fonts/weathericons.ttf", TC_DATUM, TFT_BLACK, dir[2]);
-    if (weathercode > 10) {
-        const auto &umbrella = doc["umbrella"];
-        drawString(spr, "\uf084", umbrella[0], umbrella[1], "/fonts/weathericons.ttf", TC_DATUM, TFT_RED, umbrella[2]);
-    }
-
-    spr2buffer(spr, filename, imageParams);
-    spr.deleteSprite();
-}
-
-void drawForecast(String &filename, JsonObject &cfgobj, const tagRecord *taginfo, imgParam &imageParams) {
-    wsLog("get weather");
-    getLocation(cfgobj);
-
-    String lat = cfgobj["#lat"];
-    String lon = cfgobj["#lon"];
-    String tz = cfgobj["#tz"];
-    String units = "";
-    if (cfgobj["units"] == "1") {
-        units += "&temperature_unit=fahrenheit&windspeed_unit=mph";
-    }
-
-    DynamicJsonDocument doc(2000);
-    const bool success = util::httpGetJson("https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon + "&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,windspeed_10m_max,winddirection_10m_dominant&windspeed_unit=ms&timeformat=unixtime&timezone=" + tz + units, doc, 5000);
-    if (!success) {
-        return;
-    }
-
-    TFT_eSprite spr = TFT_eSprite(&tft);
-    tft.setTextWrap(false, false);
-
-    StaticJsonDocument<512> loc;
-    getTemplate(loc, 8, taginfo->hwType);
-    initSprite(spr, imageParams.width, imageParams.height, imageParams);
-
-    const auto &location = loc["location"];
-    drawString(spr, cfgobj["location"], location[0], location[1], location[2], TL_DATUM, TFT_BLACK);
-    const auto &daily = doc["daily"];
-    const auto &column = loc["column"];
-    const int column1 = column[1].as<int>();
-    const auto &day = loc["day"];
-    for (uint8_t dag = 0; dag < column[0]; dag++) {
-        const time_t weatherday = daily["time"][dag].as<time_t>();
-        const struct tm *datum = localtime(&weatherday);
-
-        drawString(spr, String(languageDaysShort[getCurrentLanguage()][datum->tm_wday]), dag * column1 + day[0].as<int>(), day[1], day[2], TC_DATUM, TFT_BLACK);
-
-        uint8_t weathercode = daily["weathercode"][dag].as<int>();
-        if (weathercode > 40) weathercode -= 40;
-
-        const int iconcolor = (weathercode == 55 || weathercode == 65 || weathercode == 75 || weathercode == 82 || weathercode == 86 || weathercode == 95 || weathercode == 96 || weathercode == 99)
-                                  ? TFT_RED
-                                  : TFT_BLACK;
-        drawString(spr, getWeatherIcon(weathercode), loc["icon"][0].as<int>() + dag * column1, loc["icon"][1], "/fonts/weathericons.ttf", TC_DATUM, iconcolor, loc["icon"][2]);
-
-        drawString(spr, windDirectionIcon(daily["winddirection_10m_dominant"][dag]), loc["wind"][0].as<int>() + dag * column1, loc["wind"][1], "/fonts/weathericons.ttf", TC_DATUM, TFT_BLACK, loc["icon"][2]);
-
-        const int8_t tmin = round(daily["temperature_2m_min"][dag].as<double>());
-        const int8_t tmax = round(daily["temperature_2m_max"][dag].as<double>());
-        uint8_t wind;
-        const int8_t beaufort = windSpeedToBeaufort(daily["windspeed_10m_max"][dag].as<double>());
-        if (cfgobj["units"] == "1") {
-            wind = daily["windspeed_10m_max"][dag].as<int>();
-        } else {
-            wind = beaufort;
-        }
-
-        spr.loadFont(day[2], *contentFS);
-
-        if (loc["rain"]) {
-            const int8_t rain = round(daily["precipitation_sum"][dag].as<double>());
-            if (rain > 0) {
-                drawString(spr, String(rain) + "mm", dag * column1 + loc["rain"][0].as<int>(), loc["rain"][1], "", TC_DATUM, (rain > 10 ? TFT_RED : TFT_BLACK));
-            }
-        }
-
-        drawString(spr, String(tmin) + " ", dag * column1 + day[0].as<int>(), day[4], "", TR_DATUM, (tmin < 0 ? TFT_RED : TFT_BLACK));
-        drawString(spr, String(" ") + String(tmax), dag * column1 + day[0].as<int>(), day[4], "", TL_DATUM, (tmax < 0 ? TFT_RED : TFT_BLACK));
-        drawString(spr, String(wind), dag * column1 + column1 - 10, day[3], "", TR_DATUM, (beaufort > 5 ? TFT_RED : TFT_BLACK));
-        spr.unloadFont();
-        if (dag > 0) {
-            for (int i = loc["line"][0]; i < loc["line"][1]; i += 3) {
-                spr.drawPixel(dag * column1, i, TFT_BLACK);
-            }
-        }
-    }
 
     spr2buffer(spr, filename, imageParams);
     spr.deleteSprite();
@@ -860,11 +435,11 @@ bool getRssFeed(String &filename, String URL, String title, tagRecord *&taginfo,
     u8f.begin(spr);
 
     StaticJsonDocument<512> loc;
-    getTemplate(loc, 9, taginfo->hwType);
-    initSprite(spr, imageParams.width, imageParams.height, imageParams);
+    Content::getTemplate(loc, 9, taginfo->hwType);
+    Content::initSprite(spr, imageParams.width, imageParams.height, imageParams);
 
     if (util::isEmptyOrNull(title)) title = "RSS feed";
-    drawString(spr, title, loc["title"][0], loc["title"][1], loc["title"][2], TL_DATUM, TFT_BLACK);
+    Content::drawString(spr, title, loc["title"][0], loc["title"][1], loc["title"][2], TL_DATUM, TFT_BLACK);
 
     setU8G2Font(loc["font"], u8f);
     u8f.setFontMode(0);
@@ -941,12 +516,12 @@ bool getCalFeed(String &filename, String URL, String title, tagRecord *&taginfo,
     u8f.begin(spr);
 
     StaticJsonDocument<512> loc;
-    getTemplate(loc, 11, taginfo->hwType);
-    initSprite(spr, imageParams.width, imageParams.height, imageParams);
+    Content::getTemplate(loc, 11, taginfo->hwType);
+    Content::initSprite(spr, imageParams.width, imageParams.height, imageParams);
 
     if (util::isEmptyOrNull(title)) title = "Calendar";
-    drawString(spr, title, loc["title"][0], loc["title"][1], loc["title"][2], TL_DATUM, TFT_BLACK);
-    drawString(spr, dateString, loc["date"][0], loc["date"][1], loc["title"][2], TR_DATUM, TFT_BLACK);
+    Content::drawString(spr, title, loc["title"][0], loc["title"][1], loc["title"][2], TL_DATUM, TFT_BLACK);
+    Content::drawString(spr, dateString, loc["date"][0], loc["date"][1], loc["title"][2], TR_DATUM, TFT_BLACK);
 
     u8f.setFontMode(0);
     u8f.setFontDirection(0);
@@ -990,9 +565,9 @@ void drawQR(String &filename, String qrcontent, String title, tagRecord *&taginf
     qrcode_initText(&qrcode, qrcodeData, 2, ECC_MEDIUM, text);
 
     StaticJsonDocument<512> loc;
-    getTemplate(loc, 10, taginfo->hwType);
-    initSprite(spr, imageParams.width, imageParams.height, imageParams);
-    drawString(spr, title, loc["title"][0], loc["title"][1], loc["title"][2]);
+    Content::getTemplate(loc, 10, taginfo->hwType);
+    Content::initSprite(spr, imageParams.width, imageParams.height, imageParams);
+    Content::drawString(spr, title, loc["title"][0], loc["title"][1], loc["title"][2]);
 
     const int size = qrcode.size;
     const int dotsize = int((imageParams.height - loc["pos"][1].as<int>()) / size);
@@ -1012,89 +587,6 @@ void drawQR(String &filename, String qrcontent, String title, tagRecord *&taginf
 #endif
 }
 
-uint8_t drawBuienradar(String &filename, JsonObject &cfgobj, tagRecord *&taginfo, imgParam &imageParams) {
-    uint8_t refresh = 60;
-#ifdef CONTENT_BUIENRADAR
-    wsLog("get weather");
-
-    getLocation(cfgobj);
-    HTTPClient http;
-
-    String lat = cfgobj["#lat"];
-    String lon = cfgobj["#lon"];
-    http.begin("https://gps.buienradar.nl/getrr.php?lat=" + lat + "&lon=" + lon);
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.setTimeout(5000);
-    int httpCode = http.GET();
-
-    if (httpCode == 200) {
-        TFT_eSprite spr = TFT_eSprite(&tft);
-        U8g2_for_TFT_eSPI u8f;
-        u8f.begin(spr);
-
-        StaticJsonDocument<512> loc;
-        getTemplate(loc, 16, taginfo->hwType);
-        initSprite(spr, imageParams.width, imageParams.height, imageParams);
-
-        tft.setTextWrap(false, false);
-
-        String response = http.getString();
-
-        drawString(spr, cfgobj["location"], loc["location"][0], loc["location"][1], loc["location"][2]);
-
-        for (int i = 0; i < 295; i += 4) {
-            int yCoordinates[] = {110, 91, 82, 72, 62, 56, 52};
-            for (int y : yCoordinates) {
-                spr.drawPixel(i, y, TFT_BLACK);
-            }
-        }
-
-        drawString(spr, "Buienradar", loc["title"][0], loc["title"][1], loc["title"][2]);
-
-        const auto &bars = loc["bars"];
-        const auto &cols = loc["cols"];
-        const int cols0 = cols[0].as<int>();
-        const int cols1 = cols[1].as<int>();
-        const int cols2 = cols[2].as<int>();
-        const String cols3 = cols[3].as<String>();
-        const int bars0 = bars[0].as<int>();
-        const int bars1 = bars[1].as<int>();
-        const int bars2 = bars[2].as<int>();
-        for (int i = 0; i < 24; i++) {
-            const int startPos = i * 11;
-            uint8_t value = response.substring(startPos, startPos + 3).toInt();
-            const String timestring = response.substring(startPos + 4, startPos + 9);
-            const int minutes = timestring.substring(3).toInt();
-            if (value < 70) {
-                value = 70;
-            } else if (value > 180) {
-                value = 180;
-            }
-            if (value > 70) {
-                if (i < 12) {
-                    refresh = 5;
-                } else if (refresh > 5) {
-                    refresh = 15;
-                }
-            }
-
-            spr.fillRect(i * cols2 + bars0, bars1 - (value - 70), bars2, (value - 70), (value > 130 ? TFT_RED : TFT_BLACK));
-
-            if (minutes % 15 == 0) {
-                drawString(spr, timestring, i * cols2 + cols0, cols1, cols3);
-            }
-        }
-
-        spr2buffer(spr, filename, imageParams);
-        spr.deleteSprite();
-    } else {
-        wsErr("Buitenradar http " + String(httpCode));
-    }
-    http.end();
-#endif
-    return refresh;
-}
-
 void drawAPinfo(String &filename, JsonObject &cfgobj, tagRecord *&taginfo, imgParam &imageParams) {
     if (taginfo->hwType == SOLUM_SEG_UK) {
         imageParams.symbols = 0x00;
@@ -1104,9 +596,9 @@ void drawAPinfo(String &filename, JsonObject &cfgobj, tagRecord *&taginfo, imgPa
 
     TFT_eSprite spr = TFT_eSprite(&tft);
     StaticJsonDocument<2048> loc;
-    getTemplate(loc, 21, taginfo->hwType);
+    Content::getTemplate(loc, 21, taginfo->hwType);
 
-    initSprite(spr, imageParams.width, imageParams.height, imageParams);
+    Content::initSprite(spr, imageParams.width, imageParams.height, imageParams);
     const JsonArray jsonArray = loc.as<JsonArray>();
     for (const JsonVariant &elem : jsonArray) {
         drawElement(elem, spr);
@@ -1302,7 +794,7 @@ int getJsonTemplateUrl(String &filename, String URL, time_t fetched, String MAC,
 
 void drawJsonStream(Stream &stream, String &filename, tagRecord *&taginfo, imgParam &imageParams) {
     TFT_eSprite spr = TFT_eSprite(&tft);
-    initSprite(spr, imageParams.width, imageParams.height, imageParams);
+    Content::initSprite(spr, imageParams.width, imageParams.height, imageParams);
     DynamicJsonDocument doc(300);
     if (stream.find("[")) {
         do {
@@ -1328,7 +820,7 @@ void drawElement(const JsonObject &element, TFT_eSprite &spr) {
         const uint16_t size = textArray[6] | 0;
         const String bgcolorstr = textArray[7].as<String>();
         const uint16_t bgcolor = (bgcolorstr.length() > 0) ? getColor(bgcolorstr) : TFT_WHITE;
-        drawString(spr, textArray[2], textArray[0].as<int>(), textArray[1].as<int>(), textArray[3], align, getColor(textArray[4]), size, bgcolor);
+        Content::drawString(spr, textArray[2], textArray[0].as<int>(), textArray[1].as<int>(), textArray[3], align, getColor(textArray[4]), size, bgcolor);
     } else if (element.containsKey("box")) {
         const JsonArray &boxArray = element["box"];
         spr.fillRect(boxArray[0].as<int>(), boxArray[1].as<int>(), boxArray[2].as<int>(), boxArray[3].as<int>(), getColor(boxArray[4]));
@@ -1379,46 +871,6 @@ String urlEncode(const char *msg) {
         msg++;
     }
     return encodedMsg;
-}
-
-int windSpeedToBeaufort(const float windSpeed) {
-    constexpr const float speeds[] = {0.3, 1.5, 3.3, 5.5, 8, 10.8, 13.9, 17.2, 20.8, 24.5, 28.5, 32.7};
-    constexpr const int numSpeeds = sizeof(speeds) / sizeof(speeds[0]);
-    int beaufort = 0;
-    for (int i = 0; i < numSpeeds; i++) {
-        if (windSpeed >= speeds[i]) {
-            beaufort = i + 1;
-        }
-    }
-    return beaufort;
-}
-
-String windDirectionIcon(const int degrees) {
-    const String directions[] = {"\uf044", "\uf043", "\uf048", "\uf087", "\uf058", "\uf057", "\uf04d", "\uf088"};
-    int index = (degrees + 22) / 45;
-    if (index >= 8) {
-        index = 0;
-    }
-    return directions[index];
-}
-
-void getLocation(JsonObject &cfgobj) {
-    const String lat = cfgobj["#lat"];
-    const String lon = cfgobj["#lon"];
-
-    if (util::isEmptyOrNull(lat) || util::isEmptyOrNull(lon)) {
-        wsLog("get location");
-        StaticJsonDocument<80> filter;
-        filter["results"][0]["latitude"] = true;
-        filter["results"][0]["longitude"] = true;
-        filter["results"][0]["timezone"] = true;
-        StaticJsonDocument<1000> doc;
-        if (util::httpGetJson("https://geocoding-api.open-meteo.com/v1/search?name=" + urlEncode(cfgobj["location"]) + "&count=1", doc, 5000, &filter)) {
-            cfgobj["#lat"] = doc["results"][0]["latitude"].as<String>();
-            cfgobj["#lon"] = doc["results"][0]["longitude"].as<String>();
-            cfgobj["#tz"] = doc["results"][0]["timezone"].as<String>();
-        }
-    }
 }
 
 void prepareNFCReq(const uint8_t *dst, const char *url) {
@@ -1472,37 +924,6 @@ void prepareConfigFile(const uint8_t *dst, const JsonObject &config) {
     tagSettings.fixedChannel = config["fixedchannel"].as<int>();
     tagSettings.batLowVoltage = config["lowvoltage"].as<int>();
     prepareDataAvail((uint8_t *)&tagSettings, sizeof(tagSettings), 0xA8, dst);
-}
-
-void getTemplate(JsonDocument &json, const uint8_t id, const uint8_t hwtype) {
-    StaticJsonDocument<80> filter;
-    StaticJsonDocument<2048> doc;
-
-    const String idstr = String(id);
-    constexpr const char *templateKey = "template";
-
-    char filename[20];
-    snprintf(filename, sizeof(filename), "/tagtypes/%02X.json", hwtype);
-    File jsonFile = contentFS->open(filename, "r");
-
-    if (jsonFile) {
-        filter[templateKey][idstr] = true;
-        filter["usetemplate"] = true;
-        const DeserializationError error = deserializeJson(doc, jsonFile, DeserializationOption::Filter(filter));
-        jsonFile.close();
-        if (!error && doc.containsKey(templateKey) && doc[templateKey].containsKey(idstr)) {
-            json.set(doc[templateKey][idstr]);
-            return;
-        }
-        if (!error && doc.containsKey("usetemplate")) {
-            getTemplate(json, id, doc["usetemplate"]);
-            return;
-        }
-        Serial.println("json error in " + String(filename));
-        Serial.println(error.c_str());
-    } else {
-        Serial.println("Failed to open " + String(filename));
-    }
 }
 
 void setU8G2Font(const String &title, U8g2_for_TFT_eSPI &u8f) {

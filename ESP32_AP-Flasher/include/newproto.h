@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Arduino.h>
 
 extern void addCRC(void* p, uint8_t len);
