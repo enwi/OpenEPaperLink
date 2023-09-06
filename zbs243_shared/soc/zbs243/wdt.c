@@ -1,43 +1,42 @@
 #include "cpu.h"
 #include "wdt.h"
 
-void wdtOn(void)
+void wdtOn()
 {
-	uint8_t cfgPageBck;
-	
-	cfgPageBck = CFGPAGE;
+	const uint8_t cfgPageBck = CFGPAGE;
+
 	CFGPAGE = 4;
 	WDTCONF |= 0x80;
 	WDTENA = 1;
+
 	CFGPAGE = cfgPageBck;
 }
 
-void wdtOff(void)
+void wdtOff()
 {
-	uint8_t cfgPageBck;
-	
-	cfgPageBck = CFGPAGE;
+	const uint8_t cfgPageBck = CFGPAGE;
+
 	CFGPAGE = 4;
 	WDTENA = 0;
 	WDTCONF &=~ 0x80;
+
 	CFGPAGE = cfgPageBck;
 }
 
-void wdtPet(void)
+void wdtPet()
 {
-	uint8_t cfgPageBck;
-	
-	cfgPageBck = CFGPAGE;
+	const uint8_t cfgPageBck = CFGPAGE;
+
 	CFGPAGE = 4;
 	WDTPET = 0;
+
 	CFGPAGE = cfgPageBck;
 }
 
-void wdtSetResetVal(uint32_t val)	//also pets it
+void wdtSetResetVal(const uint32_t val)	//also pets it
 {
-	uint8_t cfgPageBck;
-	
-	cfgPageBck = CFGPAGE;
+	const uint8_t cfgPageBck = CFGPAGE;
+
 	CFGPAGE = 4;
 	WDTPET = 0;
 	WDTRSTVALH = val >> 16;
@@ -47,7 +46,7 @@ void wdtSetResetVal(uint32_t val)	//also pets it
 	CFGPAGE = cfgPageBck;
 }
 
-void wdtDeviceReset(void)
+void wdtDeviceReset()
 {
 	CFGPAGE = 4;
 	WDTCONF = 0x80;

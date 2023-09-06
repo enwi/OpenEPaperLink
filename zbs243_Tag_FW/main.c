@@ -20,6 +20,7 @@
 #include "timer.h"
 #include "userinterface.h"
 #include "wdt.h"
+#include "BME28X.h"
 
 #include "../oepl-definitions.h"
 #include "../oepl-proto.h"
@@ -33,71 +34,71 @@ static const uint64_t __code __at(0x008b) mVersionRom = 0x1000011300000000ull;
 #define TAG_MODE_ASSOCIATED 1
 uint8_t currentTagMode = TAG_MODE_CHANSEARCH;
 
-void displayLoop() {
-    powerUp(INIT_BASE | INIT_UART);
+// void displayLoop() {
+//     powerUp(INIT_BASE | INIT_UART);
 
-    pr("Splash screen\n");
-    powerUp(INIT_EPD);
-    showSplashScreen();
-    timerDelay(TIMER_TICKS_PER_SECOND * 4);
+//     pr("Splash screen\n");
+//     powerUp(INIT_EPD);
+//     showSplashScreen();
+//     timerDelay(TIMER_TICKS_PER_SECOND * 4);
 
-    pr("Update screen\n");
-    powerUp(INIT_EPD);
-    showApplyUpdate();
-    timerDelay(TIMER_TICKS_PER_SECOND * 4);
+//     pr("Update screen\n");
+//     powerUp(INIT_EPD);
+//     showApplyUpdate();
+//     timerDelay(TIMER_TICKS_PER_SECOND * 4);
 
-    wdt60s();
+//     wdt60s();
 
-    pr("Scanning screen - ");
-    powerUp(INIT_EPD);
-    showScanningWindow();
-    timerDelay(TIMER_TICKS_PER_SECOND * 8);
-    for (uint8_t i = 0; i < 5; i++) {
-        for (uint8_t c = 0; c < 16; c++) {
-            addScanResult(11 + c, 2 * i + 60 + c);
-        }
-        pr("redraw... ");
-        draw();
-    }
-    pr("\n");
-    timerDelay(TIMER_TICKS_PER_SECOND * 4);
+//     pr("Scanning screen - ");
+//     powerUp(INIT_EPD);
+//     showScanningWindow();
+//     timerDelay(TIMER_TICKS_PER_SECOND * 8);
+//     for (uint8_t i = 0; i < 5; i++) {
+//         for (uint8_t c = 0; c < 16; c++) {
+//             addScanResult(11 + c, 2 * i + 60 + c);
+//         }
+//         pr("redraw... ");
+//         draw();
+//     }
+//     pr("\n");
+//     timerDelay(TIMER_TICKS_PER_SECOND * 4);
 
-    wdt30s();
+//     wdt30s();
 
-    pr("AP Found\n");
-    powerUp(INIT_EPD);
-    showAPFound();
-    timerDelay(TIMER_TICKS_PER_SECOND * 4);
+//     pr("AP Found\n");
+//     powerUp(INIT_EPD);
+//     showAPFound();
+//     timerDelay(TIMER_TICKS_PER_SECOND * 4);
 
-    wdt30s();
+//     wdt30s();
 
-    pr("AP NOT Found\n");
-    powerUp(INIT_EPD);
-    showNoAP();
-    timerDelay(TIMER_TICKS_PER_SECOND * 4);
+//     pr("AP NOT Found\n");
+//     powerUp(INIT_EPD);
+//     showNoAP();
+//     timerDelay(TIMER_TICKS_PER_SECOND * 4);
 
-    wdt30s();
+//     wdt30s();
 
-    pr("Longterm sleep screen\n");
-    powerUp(INIT_EPD);
-    showLongTermSleep();
-    timerDelay(TIMER_TICKS_PER_SECOND * 4);
+//     pr("Longterm sleep screen\n");
+//     powerUp(INIT_EPD);
+//     showLongTermSleep();
+//     timerDelay(TIMER_TICKS_PER_SECOND * 4);
 
-    wdt30s();
+//     wdt30s();
 
-    pr("NO EEPROM\n");
-    powerUp(INIT_EPD);
-    showNoEEPROM();
-    timerDelay(TIMER_TICKS_PER_SECOND * 4);
+//     pr("NO EEPROM\n");
+//     powerUp(INIT_EPD);
+//     showNoEEPROM();
+//     timerDelay(TIMER_TICKS_PER_SECOND * 4);
 
-    wdt30s();
+//     wdt30s();
 
-    pr("NO EEPROM\n");
-    powerUp(INIT_EPD);
-    showNoMAC();
-    timerDelay(TIMER_TICKS_PER_SECOND * 4);
-    wdtDeviceReset();
-}
+//     pr("NO EEPROM\n");
+//     powerUp(INIT_EPD);
+//     showNoMAC();
+//     timerDelay(TIMER_TICKS_PER_SECOND * 4);
+//     wdtDeviceReset();
+// }
 
 uint8_t showChannelSelect() {  // returns 0 if no accesspoints were found
     uint8_t __xdata result[sizeof(channelList)];
@@ -175,22 +176,29 @@ uint8_t getFirstWakeUpReason() {
     }
     return WAKEUP_REASON_FIRSTBOOT;
 }
+
 void checkI2C() {
     powerUp(INIT_I2C);
+    
+    __xdata struct bme280_data data;
+    readSensor(&data);
+    // pr("BME t%d h%d p%d\n", data.temperature, data.humidity, data.pressure);
+
     //  i2cBusScan();
-    if (i2cCheckDevice(0x55)) {
-        powerDown(INIT_I2C);
-        // found something!
-        capabilities |= CAPABILITY_HAS_NFC;
-        if (supportsNFCWake()) {
-            pr("NFC: NFC Wake Supported\n");
-            capabilities |= CAPABILITY_NFC_WAKE;
-        }
-    } else {
-        pr("I2C: No devices found");
-        // didn't find a NFC chip on the expected ID
-        powerDown(INIT_I2C);
-    }
+    // if (i2cCheckDevice(0x55)) {
+    //     powerDown(INIT_I2C);
+    //     // found something!
+    //     capabilities |= CAPABILITY_HAS_NFC;
+    //     if (supportsNFCWake()) {
+    //         pr("NFC: NFC Wake Supported\n");
+    //         capabilities |= CAPABILITY_NFC_WAKE;
+    //     }
+    // } else {
+    //     pr("I2C: No devices found");
+    //     // didn't find a NFC chip on the expected ID
+    //     powerDown(INIT_I2C);
+    // }
+
 }
 
 void detectButtonOrJig() {

@@ -12,6 +12,4 @@ void timerStop(void);
 
 void timerDelay(uint64_t cycles);
 
-
-
 #endif

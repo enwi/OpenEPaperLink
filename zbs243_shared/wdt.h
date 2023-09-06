@@ -5,19 +5,19 @@
 
 
 #pragma callee_saves wdtOn
-void wdtOn(void);
+void wdtOn();
 
 #pragma callee_saves wdtOff
-void wdtOff(void);
+void wdtOff();
 
 #pragma callee_saves wdtPet
-void wdtPet(void);
+void wdtPet();
 
 #pragma callee_saves wdtSetResetVal
-void wdtSetResetVal(uint32_t val);		//speed is CPU-specific. On ZBS it is 62KHz or so
+void wdtSetResetVal(const uint32_t val); //speed is CPU-specific. On ZBS it is 62KHz or so
 
 #pragma callee_saves wdtDeviceReset
-void wdtDeviceReset(void);
+void wdtDeviceReset();
 
 #define wdt10s()                    \
     do {                            \

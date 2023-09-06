@@ -5,7 +5,8 @@ BUILD		?= zbs29_ssd1619
 SOURCES		+= main.c eeprom.c drawing.c
 SOURCES		+= comms.c
 SOURCES		+= syncedproto.c userinterface.c
-SOURCES		+= powermgt.c barcode.c i2cdevices.c settings.c
+SOURCES		+= powermgt.c barcode.c settings.c
+# SOURCES		+= i2cdevices.c
 
 all:	#make sure it is the first target
 

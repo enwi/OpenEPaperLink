@@ -885,10 +885,10 @@ bool processAvailDataInfo(struct AvailDataInfo *__xdata avail) {
                 powerUp(INIT_I2C);
                 if (avail->dataType == DATATYPE_NFC_URL_DIRECT) {
                     // only one URL (handle NDEF records on the tag)
-                    loadURLtoNTag();
+                    // loadURLtoNTag();
                 } else {
                     // raw NFC data upload to the NFC IC
-                    loadRawNTag(nfcsize);
+                    // loadRawNTag(nfcsize);
                 }
                 timerDelay(13330);
                 powerDown(INIT_I2C);

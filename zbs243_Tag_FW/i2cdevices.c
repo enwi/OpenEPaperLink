@@ -22,7 +22,7 @@
 #include "../oepl-definitions.h"
 #include "../oepl-proto.h"
 
-extern void dump(uint8_t* __xdata a, uint16_t __xdata l);  // remove me when done
+// extern void dump(uint8_t* __xdata a, uint16_t __xdata l);  // remove me when done
 
 extern uint8_t __xdata blockXferBuffer[];
 __xdata uint8_t i2cbuffer[18];
