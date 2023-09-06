@@ -25,10 +25,4 @@ uint8_t i2cTransact(struct I2cTransaction __xdata *trans, uint8_t nTrans);	//ret
 
 void I2C_IRQ(void) __interrupt (8);
 
-
-
-
-
-
 #endif
-

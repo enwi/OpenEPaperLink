@@ -20,6 +20,7 @@
 #include "timer.h"
 #include "userinterface.h"
 #include "wdt.h"
+#include "BME28X.h"
 
 #include "flash.h"
 
@@ -103,7 +104,6 @@ void displayLoop() {
     timerDelay(TIMER_TICKS_PER_SECOND * 4);
     wdtDeviceReset();
 }
-
 #endif
 
 #ifdef WRITE_MAC_FROM_FLASH
@@ -210,24 +210,29 @@ uint8_t getFirstWakeUpReason() {
 #ifndef LEAN_VERSION
 void checkI2C() {
     powerUp(INIT_I2C);
+    
+    __xdata struct bme280_data data;
+    readSensor(&data);
+    // pr("BME t%d h%d p%d\n", data.temperature, data.humidity, data.pressure);
+
     //  i2cBusScan();
-    if (i2cCheckDevice(0x55)) {
-        powerDown(INIT_I2C);
-        // found something!
-        capabilities |= CAPABILITY_HAS_NFC;
-        if (supportsNFCWake()) {
-#ifdef DEBUGNFC
-            pr("NFC: NFC Wake Supported\n");
-#endif
-            capabilities |= CAPABILITY_NFC_WAKE;
-        }
-    } else {
-#ifdef DEBUGNFC
-        pr("I2C: No devices found");
-#endif
-        // didn't find a NFC chip on the expected ID
-        powerDown(INIT_I2C);
-    }
+//     if (i2cCheckDevice(0x55)) {
+//         powerDown(INIT_I2C);
+//         // found something!
+//         capabilities |= CAPABILITY_HAS_NFC;
+//         if (supportsNFCWake()) {
+// #ifdef DEBUGNFC
+//             pr("NFC: NFC Wake Supported\n");
+// #endif
+//             capabilities |= CAPABILITY_NFC_WAKE;
+//         }
+//     } else {
+// #ifdef DEBUGNFC
+//         pr("I2C: No devices found");
+// #endif
+//         // didn't find a NFC chip on the expected ID
+//         powerDown(INIT_I2C);
+//     }
 }
 #endif
 

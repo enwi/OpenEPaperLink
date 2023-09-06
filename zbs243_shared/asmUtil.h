@@ -3,7 +3,7 @@
 
 
 #include <stdint.h>
-#include "cpu.h"
+#include "cpu/8051/cpu.h"
 
 
 
