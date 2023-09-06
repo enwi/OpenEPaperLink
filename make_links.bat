@@ -1,6 +1,9 @@
 @echo off
 
 REM TAG_FW
+rm zbs243_TAG_FW\board
+rm zbs243_TAG_FW\cpu
+rm zbs243_TAG_FW\soc
 rmdir zbs243_TAG_FW\board
 rmdir zbs243_TAG_FW\cpu
 rmdir zbs243_TAG_FW\soc
@@ -36,6 +39,9 @@ mklink /H zbs243_TAG_FW\sleep.h zbs243_shared\sleep.h
 mklink /H zbs243_TAG_FW\wdt.h zbs243_shared\wdt.h
 
 REM AP_FW
+rm zbs243_AP_FW\board
+rm zbs243_AP_FW\cpu
+rm zbs243_AP_FW\soc
 rmdir zbs243_AP_FW\board
 rmdir zbs243_AP_FW\cpu
 rmdir zbs243_AP_FW\soc
