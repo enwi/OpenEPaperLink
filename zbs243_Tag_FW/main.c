@@ -177,13 +177,7 @@ uint8_t getFirstWakeUpReason() {
     return WAKEUP_REASON_FIRSTBOOT;
 }
 
-void checkI2C() {
-    powerUp(INIT_I2C);
-    
-    __xdata struct bme280_data data;
-    readSensor(&data);
-    // pr("BME t%d h%d p%d\n", data.temperature, data.humidity, data.pressure);
-
+inline void checkI2C() {
     //  i2cBusScan();
     // if (i2cCheckDevice(0x55)) {
     //     powerDown(INIT_I2C);
@@ -198,7 +192,6 @@ void checkI2C() {
     //     // didn't find a NFC chip on the expected ID
     //     powerDown(INIT_I2C);
     // }
-
 }
 
 void detectButtonOrJig() {
@@ -268,12 +261,15 @@ void TagAssociated() {
     } else {
         powerUp(INIT_RADIO);
 
-
-
 #ifdef ENABLE_RETURN_DATA
         // example code to send data back to the AP. Up to 90 bytes can be sent in one packet
-        uint8_t __xdata blaat[2] = {0xAB, 0xBA};
-        sendTagReturnData(blaat, 2, 0x55);
+        // uint8_t __xdata blaat[2] = {0xAB, 0xBA};
+        powerUp(INIT_I2C);
+        __xdata struct bme280_data data;
+        readSensor(&data);
+        powerDown(INIT_I2C);
+        pr("Send BME280\n");
+        sendTagReturnData((uint8_t*)&data, 12, 0x55);
 #endif
 
         avail = getShortAvailDataInfo();
