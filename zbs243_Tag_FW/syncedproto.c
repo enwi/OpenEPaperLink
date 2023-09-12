@@ -254,7 +254,7 @@ struct AvailDataInfo *__xdata getShortAvailDataInfo() {
 }
 
 #ifdef ENABLE_RETURN_DATA
-static void sendTagReturnDataPacket(const uint8_t *data, uint8_t len, uint8_t type) {
+inline void sendTagReturnDataPacket(__xdata const uint8_t *data, uint8_t len, uint8_t type) {
     struct MacFrameBcast __xdata *txframe = (struct MacFrameBcast *)(outBuffer + 1);
     memset(outBuffer, 0, sizeof(struct MacFrameBcast) + sizeof(struct AvailDataReq) + 2 + 4);
     struct tagReturnData *__xdata trd = (struct tagReturnData *)(outBuffer + 2 + sizeof(struct MacFrameBcast));
@@ -277,18 +277,16 @@ static void sendTagReturnDataPacket(const uint8_t *data, uint8_t len, uint8_t ty
     commsTxNoCpy(outBuffer);
 }
 
-bool sendTagReturnData(uint8_t __xdata *data, uint8_t len, uint8_t type) {
+bool sendTagReturnData(__xdata const uint8_t *data, uint8_t len, uint8_t type) {
     radioRxEnable(true, true);
     uint32_t __xdata t;
     for (uint8_t c = 0; c < MAX_RETURN_DATA_ATTEMPTS; c++) {
         sendTagReturnDataPacket(data, len, type);
         t = timerGet() + (TIMER_TICKS_PER_MS * DATA_REQ_RX_WINDOW_SIZE);
         while (timerGet() < t) {
-            int8_t __xdata ret = commsRxUnencrypted(inBuffer);
-            if (ret > 1) {
-                if ((getPacketType(inBuffer) == PKT_TAG_RETURN_DATA_ACK) && (pktIsUnicast(inBuffer))) {
-                    return true;
-                }
+            const int8_t __xdata ret = commsRxUnencrypted(inBuffer);
+            if (ret > 1 && (getPacketType(inBuffer) == PKT_TAG_RETURN_DATA_ACK) && (pktIsUnicast(inBuffer))) {
+                return true;
             }
         }
     }

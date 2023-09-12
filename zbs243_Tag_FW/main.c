@@ -259,17 +259,22 @@ void TagAssociated() {
             if (roamChannel) currentChannel = roamChannel;
         }
     } else {
+
+#ifdef ENABLE_RETURN_DATA
+        __xdata struct bme280_data data;
+        __xdata uint8_t blaat[sizeof(data)];
+
+        powerUp(INIT_I2C);
+        readSensor(&data);
+        powerDown(INIT_I2C);
+
+        memcpy(blaat, &data, sizeof(data));
+#endif
+
         powerUp(INIT_RADIO);
 
 #ifdef ENABLE_RETURN_DATA
-        // example code to send data back to the AP. Up to 90 bytes can be sent in one packet
-        // uint8_t __xdata blaat[2] = {0xAB, 0xBA};
-        powerUp(INIT_I2C);
-        __xdata struct bme280_data data;
-        readSensor(&data);
-        powerDown(INIT_I2C);
-        pr("Send BME280\n");
-        sendTagReturnData((uint8_t*)&data, 12, 0x55);
+        sendTagReturnData(blaat, sizeof(data), 0x55);
 #endif
 
         avail = getShortAvailDataInfo();
