@@ -2,6 +2,7 @@
 
 #include "soc/zbs243/timer.h"
 #include "soc/zbs243/i2c.h"
+#include "asmUtil.h"
 
 #define BME280_32BIT_ENABLE
 #include "bme280_defs.h"
@@ -68,7 +69,7 @@ inline bool readRegister(__xdata const uint8_t address, __xdata uint8_t *data)
 
 inline void readCalibData(__xdata struct bme280_calib_data *calibData)
 {
-    __xdata uint8_t buffer[BME280_LEN_TEMP_PRESS_CALIB_DATA] = {0};
+    __xdata uint8_t buffer[BME280_LEN_TEMP_PRESS_CALIB_DATA];
 
     if (read(BME280_REG_TEMP_PRESS_CALIB_DATA, buffer, BME280_LEN_TEMP_PRESS_CALIB_DATA) != 0)
     {
@@ -198,8 +199,7 @@ inline void parse_sensor_data(__xdata const uint8_t *reg_data, __xdata struct bm
 
 inline void getMeasurements(__xdata struct bme280_uncomp_data *data)
 {
-    __xdata uint8_t buffer[BME280_LEN_P_T_H_DATA] = {0};
-
+    __xdata uint8_t buffer[BME280_LEN_P_T_H_DATA];
     if (read(BME280_REG_DATA, buffer, BME280_LEN_P_T_H_DATA) != 0)
     {
         // pr("CNGM\n");
@@ -208,92 +208,80 @@ inline void getMeasurements(__xdata struct bme280_uncomp_data *data)
     parse_sensor_data(buffer, data);
 }
 
-#define TEMPERATURE_MIN -4000
-#define TEMPERATURE_MAX 8500
-
-#define PRESSURE_MIN 30000
-#define PRESSURE_MAX 110000
-
-#define HUMIDITY_MAX 102400
-
 /// @brief This internal API is used to compensate the raw temperature data and
 /// return the compensated temperature data in integer data type.
-inline int32_t compensateTemperature(const struct bme280_uncomp_data *uncomp_data, struct bme280_calib_data *calib_data)
+inline void compensateTemperature(__xdata const struct bme280_uncomp_data *uncomp_data, __xdata struct bme280_calib_data *calib_data, __xdata struct bme280_data *data)
 {
-    int32_t var1 = (int32_t)((uncomp_data->temperature / 8) - ((int32_t)calib_data->dig_t1 * 2));
-    var1 = (var1 * ((int32_t)calib_data->dig_t2)) / 2048;
-    int32_t var2 = (int32_t)((uncomp_data->temperature / 16) - ((int32_t)calib_data->dig_t1));
-    var2 = (((var2 * var2) / 4096) * ((int32_t)calib_data->dig_t3)) / 16384;
+    __xdata int32_t var1 = (mathPrvDiv32x8(uncomp_data->temperature, 8) - (calib_data->dig_t1 * 2));
+    var1 = (var1 * calib_data->dig_t2) / 2048;
+
+    __xdata int32_t var2 = (mathPrvDiv32x8(uncomp_data->temperature, 16) - calib_data->dig_t1);
+    var2 = ((var2 * var2 / 4096) * calib_data->dig_t3) / 16384;
+
     calib_data->t_fine = var1 + var2;
-    int32_t temperature = (calib_data->t_fine * 5 + 128) / 256;
 
-    if (temperature < TEMPERATURE_MIN)
-    {
-        temperature = TEMPERATURE_MIN;
-    }
-    else if (temperature > TEMPERATURE_MAX)
-    {
-        temperature = TEMPERATURE_MAX;
-    }
-
-    return temperature;
+    __xdata int16_t temperature = (calib_data->t_fine * 5 + 128) / 256;
+    data->temperature = (temperature < BME280_TEMPERATURE_MIN)   ? BME280_TEMPERATURE_MIN
+                        : (temperature > BME280_TEMPERATURE_MAX) ? BME280_TEMPERATURE_MAX
+                                                                 : temperature;
 }
 
 /// @brief This internal API is used to compensate the raw pressure data and
 /// return the compensated pressure data in integer data type.
-inline uint32_t compensatePressure(const struct bme280_uncomp_data *uncomp_data, const struct bme280_calib_data *calib_data)
+inline void compensatePressure(__xdata const struct bme280_uncomp_data *uncomp_data, __xdata const struct bme280_calib_data *calib_data, __xdata struct bme280_data *data)
 {
-    int32_t var1 = (((int32_t)calib_data->t_fine) / 2) - (int32_t)64000;
-    int32_t var2 = (((var1 / 4) * (var1 / 4)) / 2048) * ((int32_t)calib_data->dig_p6);
+    __xdata int32_t var1 = mathPrvDiv32x8(calib_data->t_fine, 2) - 64000;
+    __xdata int32_t var2 = (((var1 / 4) * (var1 / 4)) / 2048) * ((int32_t)calib_data->dig_p6);
     var2 = var2 + ((var1 * ((int32_t)calib_data->dig_p5)) * 2);
     var2 = (var2 / 4) + (((int32_t)calib_data->dig_p4) * 65536);
-    const int32_t var3 = (calib_data->dig_p3 * (((var1 / 4) * (var1 / 4)) / 8192)) / 8;
-    const int32_t var4 = (((int32_t)calib_data->dig_p2) * var1) / 2;
+    __xdata const int32_t var3 = (calib_data->dig_p3 * (((var1 / 4) * (var1 / 4)) / 8192)) / 8;
+    __xdata const int32_t var4 = (((int32_t)calib_data->dig_p2) * var1) / 2;
     var1 = (var3 + var4) / 262144;
     var1 = (((32768 + var1)) * ((int32_t)calib_data->dig_p1)) / 32768;
 
     // Avoid exception caused by division by zero
-    if (var1)
+    if (!var1)
     {
-        const uint32_t var5 = (uint32_t)((uint32_t)1048576) - uncomp_data->pressure;
-        uint32_t pressure = ((uint32_t)(var5 - (uint32_t)(var2 / 4096))) * 3125;
-
-        if (pressure < 0x80000000)
-        {
-            pressure = (pressure << 1) / ((uint32_t)var1);
-        }
-        else
-        {
-            pressure = (pressure / (uint32_t)var1) * 2;
-        }
-
-        var1 = (((int32_t)calib_data->dig_p9) * ((int32_t)(((pressure / 8) * (pressure / 8)) / 8192))) / 4096;
-        var2 = (((int32_t)(pressure / 4)) * ((int32_t)calib_data->dig_p8)) / 8192;
-        pressure = (uint32_t)((int32_t)pressure + ((var1 + var2 + calib_data->dig_p7) / 16));
-
-        if (pressure < PRESSURE_MIN)
-        {
-            pressure = PRESSURE_MIN;
-        }
-        else if (pressure > PRESSURE_MAX)
-        {
-            pressure = PRESSURE_MAX;
-        }
-        return pressure;
+        data->pressure = BME280_PRESSURE_MIN;
+        return;
     }
 
-    return PRESSURE_MIN;
+    __xdata const uint32_t var5 = 1048576u - uncomp_data->pressure;
+    __xdata uint32_t pressure = (var5 - (var2 / 4096)) * 3125;
+
+    if (pressure < 0x80000000)
+    {
+        pressure = mathPrvMul32x8(pressure, 2) / var1;
+    }
+    else
+    {
+        pressure = (pressure / var1) * 2;
+    }
+
+    var1 = (((int32_t)calib_data->dig_p9) * ((int32_t)mathPrvDiv32x16(mathPrvDiv32x8(pressure, 8) * mathPrvDiv32x8(pressure, 8), 8192))) / 4096;
+    var2 = (((int32_t)mathPrvDiv32x8(pressure, 4)) * ((int32_t)calib_data->dig_p8)) / 8192;
+    pressure = (uint32_t)((int32_t)pressure + ((var1 + var2 + calib_data->dig_p7) / 16));
+    data->pressure = mathPrvDiv32x8(pressure, 100);
+
+    if (data->pressure < BME280_PRESSURE_MIN)
+    {
+        data->pressure = BME280_PRESSURE_MIN;
+    }
+    else if (data->pressure > BME280_PRESSURE_MAX)
+    {
+        data->pressure = BME280_PRESSURE_MAX;
+    }
 }
 
 /// @brief This internal API is used to compensate the raw humidity data and
 /// return the compensated humidity data in integer data type.
-inline uint32_t compensateHumidity(const struct bme280_uncomp_data *uncomp_data, const struct bme280_calib_data *calib_data)
+inline void compensateHumidity(__xdata const struct bme280_uncomp_data *uncomp_data, __xdata const struct bme280_calib_data *calib_data, __xdata struct bme280_data *data)
 {
-    const int32_t var1 = calib_data->t_fine - ((int32_t)76800);
-    int32_t var2 = (int32_t)(uncomp_data->humidity * 16384);
-    int32_t var3 = (int32_t)(((int32_t)calib_data->dig_h4) * 1048576);
-    int32_t var4 = ((int32_t)calib_data->dig_h5) * var1;
-    int32_t var5 = (((var2 - var3) - var4) + (int32_t)16384) / 32768;
+    __xdata const int32_t var1 = calib_data->t_fine - ((int32_t)76800);
+    __xdata int32_t var2 = (int32_t)(uncomp_data->humidity * 16384);
+    __xdata int32_t var3 = (int32_t)(((int32_t)calib_data->dig_h4) * 1048576);
+    __xdata int32_t var4 = ((int32_t)calib_data->dig_h5) * var1;
+    __xdata int32_t var5 = (((var2 - var3) - var4) + (int32_t)16384) / 32768;
     var2 = (var1 * ((int32_t)calib_data->dig_h6)) / 1024;
     var3 = (var1 * ((int32_t)calib_data->dig_h3)) / 2048;
     var4 = ((var2 * (var3 + (int32_t)32768)) / 1024) + (int32_t)2097152;
@@ -303,21 +291,20 @@ inline uint32_t compensateHumidity(const struct bme280_uncomp_data *uncomp_data,
     var5 = var3 - ((var4 * ((int32_t)calib_data->dig_h1)) / 16);
     var5 = (var5 < 0 ? 0 : var5);
     var5 = (var5 > 419430400 ? 419430400 : var5);
-    uint32_t humidity = (uint32_t)(var5 / 4096);
+    var5 = mathPrvDiv32x16(var5, 4096);
+    data->humidity = mathPrvDiv32x16(var5, 1024);
 
-    if (humidity > HUMIDITY_MAX)
+    if (data->humidity > BME280_HUMIDITY_MAX)
     {
-        humidity = HUMIDITY_MAX;
+        data->humidity = BME280_HUMIDITY_MAX;
     }
-
-    return humidity;
 }
 
 inline void compensateData(__xdata struct bme280_calib_data *calibData, __xdata struct bme280_uncomp_data *uncomp, __xdata struct bme280_data *data)
 {
-    data->temperature = compensateTemperature(uncomp, calibData);
-    data->pressure = compensatePressure(uncomp, calibData);
-    data->humidity = compensateHumidity(uncomp, calibData);
+    compensateTemperature(uncomp, calibData, data);
+    compensatePressure(uncomp, calibData, data);
+    compensateHumidity(uncomp, calibData, data);
 }
 
 // inline void softReset()
@@ -339,6 +326,8 @@ inline void compensateData(__xdata struct bme280_calib_data *calibData, __xdata 
 //     }
 // }
 
+/// @brief Read the bme280 sensor
+/// @param data Struct holding sensor data
 inline void readSensor(__xdata struct bme280_data *data)
 {
     // read chip id
@@ -352,7 +341,7 @@ inline void readSensor(__xdata struct bme280_data *data)
     {
         return;
     }
-    pr("Found BME280\n");
+    // pr("Found BME280\n");
 
     // softReset();
 
@@ -373,7 +362,7 @@ inline void readSensor(__xdata struct bme280_data *data)
 
     while (isMeasuring())
     {
-        pr("meas\n");
+        // pr("meas\n");
         timerDelay(TIMER_TICKS_PER_MS * 10);
     }
 
@@ -382,5 +371,8 @@ inline void readSensor(__xdata struct bme280_data *data)
     compensateData(&calibData, &uncomp, data);
 
     // pr("BME t%lu h%lu p%lu\n", uncomp.temperature, uncomp.humidity, uncomp.pressure);
-    pr("BME t%ld h%lu p%lu\n", data->temperature, data->humidity / 1024, data->pressure / 100);
+    // temperature / 100
+    // humidity / 1024
+    // pressure / 100
+    // pr("BME t%ld h%lu p%lu\n", data->temperature, data->humidity / 1024, data->pressure / 100);
 }

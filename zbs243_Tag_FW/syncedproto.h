@@ -17,7 +17,7 @@ extern bool __xdata fastNextCheckin;
 
 
 #ifdef ENABLE_RETURN_DATA
-extern bool sendTagReturnData(uint8_t __xdata *data, uint8_t len, uint8_t type);
+extern bool sendTagReturnData(__xdata const uint8_t *data, uint8_t len, uint8_t type);
 #endif
 
 extern void dump(const uint8_t *__xdata a, const uint16_t __xdata l);
