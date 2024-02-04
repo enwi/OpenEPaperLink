@@ -7,7 +7,7 @@ SOURCES		+= main.c eeprom.c drawing.c
 SOURCES		+= comms.c
 SOURCES		+= syncedproto.c userinterface.c
 SOURCES		+= powermgt.c barcode.c settings.c
-# SOURCES		+= i2cdevices.c
+SOURCES		+= i2cdevices.c
 
 
 

@@ -18,8 +18,8 @@
 #define VALIDATE_IMAGE_MD5       // The firmware can validate the image MD5 before displaying it. This costs about 8mAS (milliamp-second) for a 1.54, 16
 // #define PRINT_LUT                // uncomment if you want the tag to print the LUT for the current temperature bracket
 // #define ENABLE_GPIO_WAKE         // uncomment to enable GPIO wake
-// #define ENABLE_RETURN_DATA       // enables the tag to send blocks of data back. Enabling this costs about 4 IRAM bytes
-// #define LEAN_VERSION             // makes a smaller version, leaving extra flash space for other things
+#define ENABLE_RETURN_DATA       // enables the tag to send blocks of data back. Enabling this costs about 4 IRAM bytes
+#define LEAN_VERSION             // makes a smaller version, leaving extra flash space for other things
 // #define WRITE_MAC_FROM_FLASH     // takes mac address from flash if none is set in the infopage
 
 #if defined(DEBUGSETTINGS) || defined(DEBUGMSG) || defined(DEBUGBLOCKS) || defined(DEBUGPROTO) || defined(DEBUGOTA) || defined(DEBUGNFC) || defined(DEBUGEPD) || defined(DEBUGMAIN) || defined(DEBUGEEPROM)
